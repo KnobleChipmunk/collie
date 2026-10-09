@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+"""Stand-in for delta: prints its argv and the number of diff lines it received on stdin."""
+
+import json
+import sys
+
+lines = sys.stdin.read().splitlines()
+print("DELTA " + json.dumps(sys.argv[1:]))
+print(f"DELTA_STDIN_LINES {len(lines)}")
