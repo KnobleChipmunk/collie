@@ -33,7 +33,7 @@ def test_first_call_splits_down_labels_and_runs(herdr: FakeHerdr, source_file: P
     assert pane == "w1:p9"
     argv = render_argv(herdr)
     assert argv[:4] == [sys.executable, "-m", "collie", "render"]
-    assert str(source_file.resolve()) in argv
+    assert f"{source_file.resolve()}:36-64@41-47" in argv
     assert "retry loop" in argv
 
 
@@ -311,9 +311,11 @@ def test_bad_revision_exits_2_without_herdr(herdr: FakeHerdr, git_repo: Path) ->
 # staying out of the way -----------------------------------------------------------------------
 
 
-def test_disabled_is_silent_success(herdr: FakeHerdr, source_file: Path) -> None:
+def test_disabled_is_silent_success(herdr: FakeHerdr, source_file: Path, git_repo: Path) -> None:
     off = {"COLLIE": "off"}
     r = herdr.cli("show", str(source_file), extra_env=off)
+    assert r.returncode == 0 and "disabled" in r.stdout
+    r = herdr.cli("diff", "--repo", str(git_repo), extra_env=off)
     assert r.returncode == 0 and "disabled" in r.stdout
     r = herdr.cli("rule", extra_env=off)
     assert r.returncode == 0 and r.stdout == ""

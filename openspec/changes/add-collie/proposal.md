@@ -46,6 +46,7 @@ Added after the Hermes review (same day):
 19. bat with `--style=numbers,grid` wraps a long line onto continuation rows whose line number column is blank (tested with `--terminal-width=60`).
 20. Printing `\e[<rows>S` then `\e[H` in a herdr pane left the screen showing only the new output while all 40 earlier lines stayed readable through `herdr pane read --source recent`; `max_offset_from_bottom` became 54 (tested in `w2:pED`).
 21. `herdr pane read` prints plain text, while `pane wait-output` prints JSON with `.result.matched_line`; `herdr tab create [--workspace] [--cwd] [--label] [--no-focus]` and `herdr tab close <tab_id>` exist (`herdr tab` help).
+22. `tab create` returns `.result.tab` and `.result.root_pane` (`/herdr` skill, "Use IDs and caller context"); `tests/test_real_herdr.py` is the first place this runs, and a wrong shape fails it loudly at fixture setup.
 
 ## What Changes
 

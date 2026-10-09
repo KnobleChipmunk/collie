@@ -150,3 +150,17 @@ The repo SHALL include an opt-in test that runs collie against the real herdr an
 #### Scenario: Herdr changes its output
 - **WHEN** a herdr upgrade changes a JSON shape collie relies on
 - **THEN** `COLLIE_REAL_HERDR=1 uv run pytest tests/test_real_herdr.py` fails while the faked tests may still pass
+
+### Requirement: Herdr errors exit 5
+Any error returned by a Herdr call SHALL make the tool exit 5 with the Herdr error code in its message.
+
+#### Scenario: Unknown caller pane
+- **WHEN** Herdr does not know the caller's pane id
+- **THEN** the tool exits 5 and stderr names `pane_not_found`
+
+### Requirement: Installable as a console script
+The package SHALL declare a `collie` console script so `uv tool install` puts `collie` on PATH.
+
+#### Scenario: Install on a second machine
+- **WHEN** the operator runs `uv tool install git+https://github.com/KnobleChipmunk/collie`
+- **THEN** `collie --help` works from any directory

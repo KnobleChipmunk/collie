@@ -4,16 +4,16 @@
 
 - `uv run pytest` passes: every test in `tests/test_units.py` and `tests/test_cli.py`, none skipped, none edited except by a recorded lead ruling.
 - `uv run ruff check .` and `uv run ruff format --check .` are clean.
-- `.venv/bin/python -m py_compile` passes on every file under `src/`.
+- `.venv/bin/python -m py_compile` passes on every `.py` file under `src/`.
 - Inside Herdr: `COLLIE_REAL_HERDR=1 uv run pytest tests/test_real_herdr.py` passes (replaces the manual pane check). Then the operator runs `collie diff HEAD~1` once by eye to confirm unified output.
 
 ## Requirement table
 
 | Requirement (spec.md) | Implementing step | Acceptance evidence |
 |---|---|---|
-| One reusable pane per agent | 3, 4 | `test_first_call_splits_down_labels_and_runs`, `test_second_call_reuses_pane`, `test_closed_pane_is_recreated`, `test_label_in_other_tab_is_ignored`, `test_busy_code_pane_exits_4_without_input`, `test_close_closes_only_own_pane` |
+| One reusable pane per agent | 3, 4 | `test_label_for`, `test_find_code_pane_matches_label_and_tab`, `test_is_idle_shell`, `test_first_call_splits_down_labels_and_runs`, `test_second_call_reuses_pane`, `test_closed_pane_is_recreated`, `test_label_in_other_tab_is_ignored`, `test_busy_code_pane_exits_4_without_input`, `test_close_closes_only_own_pane` |
 | Split direction follows width | 3 | `test_choose_direction`, `test_wide_caller_splits_right` |
-| File excerpts render with bat | 2, 5 | `test_bat_argv_*`, `test_note_line_is_mocha_mauve`, `test_render_show_clears_notes_and_calls_bat` |
+| File excerpts render with bat | 2, 5 | `test_theme_default_and_override`, `test_bat_argv_*`, `test_note_line_is_mocha_mauve`, `test_render_show_clears_notes_and_calls_bat` |
 | Diffs render unified only | 2, 5 | `test_diff_argvs_*`, `test_render_diff_pipes_git_into_unified_delta`, `test_render_empty_diff_says_no_changes`, `test_diff_routes_through_render` |
 | Stays out of the way | 4 | `test_disabled_is_silent_success`, `test_outside_herdr_exits_3`, `test_rule_prints_only_in_herdr` |
 | Validate before touching panes | 1, 4 | `test_parse_range_*`, `test_parse_excerpt_*`, `test_more_than_five_excerpts_exits_2`, `test_reversed_range_exits_2_without_herdr`, `test_missing_file_exits_2_without_herdr`, `test_diff_outside_git_exits_2` |
@@ -28,6 +28,7 @@
 | Several excerpts in one call | 1, 4, 5 | `test_parse_excerpt_*`, `test_excerpt_spec_and_subject`, `test_several_excerpts_render_in_one_call`, `test_render_several_excerpts_in_order`, `test_more_than_five_excerpts_exits_2`, `test_overflow` |
 | Lines found by text | 1, 4 | `test_find_match`, `test_match_finds_lines_by_text`, `test_match_reports_repeats_and_uses_first`, `test_match_not_found_exits_2`, `test_match_with_range_or_several_files_exits_2` |
 | Fake checked against real herdr | 8 | `tests/test_real_herdr.py` |
+| Herdr errors exit 5 | 4 | `test_herdr_error_exits_5`, `test_rename_failure_closes_new_pane` |
 | Installable via uv | 7 | `test_installed_entry_point_exists`, operator runs `uv tool install` on a second machine |
 
 Callers of every new command: `show`, `diff`, `close` are called by agents per `rule.md` and `skill/SKILL.md`; `rule` is called by the SessionStart hook; `setup` by the operator once per machine; `render` only by `show` and `diff` through `herdr pane run`.
@@ -40,7 +41,7 @@ Callers of every new command: `show`, `diff`, `close` are called by agents per `
 4. `cli.py` and `__main__.py`: subcommands, exit codes 0/2/3/4/5, flow from design.md.
 5. `render` subcommand: clear, note, bat or git piped into delta, `no changes` on an empty diff.
 6. `setup.py`, `rule.md`, `skill/SKILL.md`: rule text as drafted in design.md.
-7. `README.md` install section: `uv tool install git+ssh://git@github.com/KnobleChipmunk/collie`, then `collie setup --dry-run`, then `collie setup`. Prerequisites: `brew install bat git-delta` (macOS) or the distro packages (Linux).
+7. `README.md` install section: `uv tool install git+https://github.com/KnobleChipmunk/collie`, then `collie setup --dry-run`, then `collie setup`. Prerequisites: `brew install bat git-delta` (macOS) or the distro packages (Linux).
 8. `tests/test_real_herdr.py` stays green against the installed herdr; record the herdr version it passed on in the PR.
 
 Review source: the Hermes (Qwen 3.8) design review on 2026-10-09; ideas 1 to 4 and both notes adopted, idea 5 rejected (design.md decision 8).

@@ -31,7 +31,8 @@ Python 3.11+ (tests use `tomllib`), standard library only at runtime. Dev: pytes
   with `spec() -> str` (`<path>[:N-M][@H-H,...]`, highlights always written as ranges) and
   `subject() -> str` (`<file name>[:N-M]`).
 - `parse_excerpt(text: str) -> Excerpt` reads `PATH[:N-M][@H[-H][,H[-H]...]]`. It splits `@` off the
-  right first, then a `:` suffix only when it parses as a range, so paths containing colons work.
+  right first, then a `:` suffix when it has the shape of a range (ASCII digits, optionally `-` and ASCII digits),
+  so paths containing colons work; a suffix with that shape that `parse_range` rejects raises `ValueError`.
   Raises `ValueError` for an empty path, a bad range, an empty or bad highlight list, or a
   highlight outside the excerpt's lines. `@` was chosen over `#` because zsh with `extendedglob`
   treats `#` as a glob operator.
@@ -79,7 +80,7 @@ Python 3.11+ (tests use `tomllib`), standard library only at runtime. Dev: pytes
   `is_idle_shell(process_info: dict) -> bool`: true when `foreground_processes` is nonempty and
   every entry's `name` is in `SHELLS`.
 - `RENDER_PROCS = {"bat", "delta", "git"}`; `is_own_render(process_info: dict) -> bool`: true when
-  every foreground entry's `name` is in `RENDER_PROCS` or its `cmdline` contains `-m collie render`.
+  `foreground_processes` is nonempty and every foreground entry's `name` is in `RENDER_PROCS` or its `cmdline` contains `-m collie render`.
 - `BUSY_GRACE_MS`: `COLLIE_BUSY_GRACE_MS` if set, else 2000. Polling interval 200 ms.
 - `class Herdr`: thin wrapper that runs the `herdr` found on PATH, parses JSON stdout, and raises
   `HerdrError(code, message)` on exit status 1. Methods: `get`, `list_panes`, `layout`,
@@ -189,5 +190,13 @@ using the pane: say so and continue without it. Closing the pane (`collie close`
 9. **Two kinds of busy.** collie's own render finishing is a wait; the user's program is a stop.
 10. **Rejected (Hermes review, idea 5): wrap markers for bat.** bat already leaves the line number
    column blank on wrapped rows (fact 19), so wrapped lines are distinguishable.
+12. **Lead ruling (build review round 2): reject `@` in a parent directory instead of re-plumbing render.**
+    Render re-parses each excerpt spec, so a path like `.../pkg@1.0.0/f.py` would split at the wrong
+    `@`. The tool checks that every final excerpt round-trips and exits 2 otherwise, after `--match`
+    has resolved its range. Passing path, lines and highlights to render as separate values would
+    remove the limitation; deferred as unneeded for v1 and documented in the README.
+13. **Follow up: shell history.** Each render is typed into the code pane's shell, so it lands in
+    the user's history file (9 entries observed after the build's real herdr runs). The fix is shell
+    specific and needs live verification; filed separately.
 11. **Rejected: side by side diffs** (fact 13), **neovim** (interactive, needs teardown), **one new
    pane per call** (clutters the tab).

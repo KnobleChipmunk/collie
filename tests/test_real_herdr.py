@@ -84,12 +84,12 @@ def test_show_reuse_scrollback_close(scratch_tab: tuple[str, str], source_file: 
     found = re.search(r"shown in (\S+):", first.stdout)
     assert found, first.stdout
     code_pane = found.group(1)
-    herdr("pane", "wait-output", code_pane, "--match", "example.py:1-10", "--timeout", "10000")
+    herdr("pane", "wait-output", code_pane, "--match", "line_10 = 10", "--timeout", "10000")
 
     second = collie(root, tab, "show", f"{source_file}:20-25")
     assert second.returncode == 0, second.stderr
     assert f"shown in {code_pane}:" in second.stdout
-    herdr("pane", "wait-output", code_pane, "--match", "example.py:20-25", "--timeout", "10000")
+    herdr("pane", "wait-output", code_pane, "--match", "line_25 = 25", "--timeout", "10000")
 
     panes = [
         p
@@ -103,6 +103,7 @@ def test_show_reuse_scrollback_close(scratch_tab: tuple[str, str], source_file: 
     assert "example.py:20-25" in read_text(code_pane, "visible")
     assert "line_3 = 3" in read_text(code_pane, "recent")  # the first excerpt survives in scrollback
 
+    wait_for_shell(code_pane)  # the render has exited; close does no grace wait
     closed = collie(root, tab, "close")
     assert closed.returncode == 0, closed.stderr
     remaining = [
