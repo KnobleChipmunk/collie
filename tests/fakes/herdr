@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Scripted stand-in for the herdr CLI.
+
+State lives in $FAKE_HERDR_STATE (JSON); per pane: tab_id, cwd, width, height (default 28),
+label, procs_seq (list of process lists; each process-info call consumes one, the last one sticks;
+a process is a name string or a {"name", "cmdline"} dict). Top level: next_id, new_pane (fields for
+the pane split creates), fail_rename. every call is appended to $FAKE_HERDR_LOG as one JSON
+argv list per line. Output shapes mirror herdr 0.8.0 (see proposal.md grounded facts 1 to 5).
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+state_path = Path(os.environ["FAKE_HERDR_STATE"])
+log_path = Path(os.environ["FAKE_HERDR_LOG"])
+argv = sys.argv[1:]
+with log_path.open("a") as log:
+    log.write(json.dumps(argv) + "\n")
+state = json.loads(state_path.read_text())
+panes: dict = state["panes"]
+
+
+def out(kind: str, result: dict) -> None:
+    print(json.dumps({"id": f"cli:pane:{kind}", "result": result}))
+    sys.exit(0)
+
+
+def fail(code: str, message: str) -> None:
+    print(json.dumps({"error": {"code": code, "message": message}, "id": "cli:pane"}))
+    sys.exit(1)
+
+
+def info(pane_id: str) -> dict:
+    p = panes[pane_id]
+    d = {"pane_id": pane_id, "tab_id": p["tab_id"], "cwd": p["cwd"], "workspace_id": pane_id.split(":")[0]}
+    if p.get("label"):
+        d["label"] = p["label"]
+    return d
+
+
+def flag(name: str) -> str | None:
+    return argv[argv.index(name) + 1] if name in argv else None
+
+
+def need(pane_id: str | None) -> str:
+    if pane_id not in panes:
+        fail("pane_not_found", f"pane {pane_id} not found")
+    return pane_id
+
+
+if argv[:1] != ["pane"]:
+    fail("unsupported", " ".join(argv))
+cmd = argv[1]
+if cmd == "get":
+    out("get", {"pane": info(need(argv[2])), "type": "pane_info"})
+elif cmd == "list":
+    out("list", {"panes": [info(i) for i in panes]})
+elif cmd == "layout":
+    pid = need(flag("--pane"))
+    tab = panes[pid]["tab_id"]
+    rows = [
+        {"pane_id": i, "rect": {"width": p["width"], "height": p.get("height", 28)}}
+        for i, p in panes.items()
+        if p["tab_id"] == tab
+    ]
+    out("layout", {"layout": {"panes": rows, "tab_id": tab}, "type": "pane_layout"})
+elif cmd == "process-info":
+    pid = need(flag("--pane"))
+    seq = panes[pid].setdefault("procs_seq", [["zsh"]])
+    current = seq.pop(0) if len(seq) > 1 else seq[0]
+    state_path.write_text(json.dumps(state))
+    procs = [p if isinstance(p, dict) else {"name": p, "cmdline": p} for p in current]
+    out("process_info", {"process_info": {"pane_id": pid, "foreground_processes": procs}})
+elif cmd == "split":
+    parent = need(flag("--pane"))
+    new_id = state["next_id"]
+    panes[new_id] = {
+        "tab_id": panes[parent]["tab_id"],
+        "cwd": flag("--cwd") or panes[parent]["cwd"],
+        "width": 80,
+        **state.get("new_pane", {}),
+    }
+    state_path.write_text(json.dumps(state))
+    out("split", {"pane": info(new_id), "type": "pane_info"})
+elif cmd == "rename":
+    pid = need(argv[2])
+    if state.get("fail_rename"):
+        fail("rename_failed", f"could not rename {pid}")
+    panes[pid]["label"] = " ".join(argv[3:])
+    state_path.write_text(json.dumps(state))
+    out("rename", {"pane": info(pid), "type": "pane_info"})
+elif cmd == "run":
+    need(argv[2])
+    sys.exit(0)  # real herdr 0.8.0 prints nothing on a successful `pane run`
+elif cmd == "close":
+    pid = need(argv[2])
+    del panes[pid]
+    state_path.write_text(json.dumps(state))
+    out("close", {"type": "ok"})
+else:
+    fail("unsupported", " ".join(argv))

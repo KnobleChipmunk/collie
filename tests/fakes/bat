@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""Stand-in for bat: prints its argv as one JSON line tagged BAT."""
+
+import json
+import sys
+
+print("BAT " + json.dumps(sys.argv[1:]))
