@@ -18,6 +18,7 @@ Read or run on 2026-10-16 on the Mac, against `main` at 697c10b.
 6. `ps -o command= -p <pid>` prints that process's full command line (observed: `sleep 30`). The same flags work with Linux procps, where `command` is an alias of `args`.
 7. `herdr pane resize --direction left|right|up|down [--amount FLOAT] [--pane ID]` exists (`herdr pane resize --help`); the unit of `--amount` is not documented.
 8. herdr's socket API lists `events.subscribe` and a `layout.updated` event (`herdr api schema --json`); whether that event carries pane sizes is not verified. Not used by this change.
+9. Plan review round 1 (scratch tab): `herdr pane resize --amount 0.1` moved the split by 30 of the tab's 300 columns, so the unit is a fraction of the split; the pane's terminal is `rect.width - 3` columns and `rect.height - 2` rows (observed 147x67 inside a 150x69 rect); `tcgetattr` on the pty master after the child exits reads the slave's final ECHO and ICANON state.
 
 ## What Changes
 

@@ -10,15 +10,19 @@
   scrollback (`\x1b[3J`).
 - `resident_enabled() -> bool`: true when `sys.stdin.isatty()` and `sys.stdout.isatty()` and
   `COLLIE_RESIDENT` is not `off`.
-- `stay_resident(draw: Callable[[], int]) -> int`: called after the first draw. Puts stdin in
-  cbreak mode (no echo, no line buffering), installs handlers, and loops on `select` over stdin
-  with a short timeout:
-  - `SIGWINCH` records the time of the latest resize. Once `SETTLE_S` has passed since it, write
-    `REDRAW_CLEAR`, flush, and call `draw()`. A burst of resizes gives one redraw.
+- `resident_terminal()`: a context manager entered BEFORE the first draw (plan review round 1,
+  F1: a resize that arrives while bat or delta is still running the first draw must not be lost,
+  and `SIGWINCH` is ignored by default until a handler exists). On enter it puts stdin in cbreak mode
+  (no echo, no line buffering) and installs handlers for `SIGWINCH` (record the time of the latest
+  resize), `SIGTERM`, `SIGHUP`, `SIGINT` (request stop). It yields a state object. On exit, including
+  on an exception, it restores the saved terminal attributes and the previous signal handlers.
+- `stay_resident(state, draw: Callable[[], int]) -> int`: called after the first draw, inside
+  `resident_terminal()`. Returns 0 at once if a stop was requested during the first draw. Otherwise
+  loops on `select` over stdin with a short timeout:
+  - Once `SETTLE_S` has passed since the latest resize (including one that arrived during the first
+    draw), write `REDRAW_CLEAR`, flush, and call `draw()`. A burst of resizes gives one redraw.
   - Any byte on stdin: consume it and return 0.
-  - `SIGTERM`, `SIGHUP`, `SIGINT`: return 0.
-  - Always restores the saved terminal attributes and the previous signal handlers before
-    returning, including on an exception.
+  - A stop request: return 0.
 
 ### `collie.panes` (additions)
 
@@ -33,9 +37,10 @@
 ### `collie.cli` (changes)
 
 - `cmd_render_show` and `cmd_render_diff` each build a `draw()` closure that writes the headers and
-  runs bat (or git piped into delta), exactly as today. They write `redraw_prefix(rows)` once, call
-  `draw()`, then, if `resident_enabled()`, return `stay_resident(draw)`; otherwise return the first
-  draw's status.
+  runs bat (or git piped into delta), exactly as today. If `resident_enabled()`: enter
+  `resident_terminal()`, write `redraw_prefix(rows)`, call `draw()`, and return
+  `stay_resident(state, draw)` from inside the context. Otherwise write the prefix, call `draw()`
+  once, and return its status.
 - `deliver`, existing pane: read `process_info` once.
   - Idle shell: run.
   - `is_own_render` false (the user's program): exit 4 at once, as today.

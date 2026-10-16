@@ -101,6 +101,7 @@ def test_resident_renderer_redraws_on_resize(scratch_tab: tuple[str, str], sourc
     assert any("-m collie render" in (p.get("cmdline") or "") for p in procs)  # still resident
 
     before = pane_width(code_pane)
+    drawn = rule_width(read_text(code_pane, "visible"))  # the terminal is narrower than rect.width (fact 9)
     for direction in ("left", "right"):
         herdr("pane", "resize", "--pane", code_pane, "--direction", direction, "--amount", "0.1")
         if pane_width(code_pane) != before:
@@ -108,10 +109,11 @@ def test_resident_renderer_redraws_on_resize(scratch_tab: tuple[str, str], sourc
     after = pane_width(code_pane)
     assert after != before, "herdr pane resize did not change the code pane's width"
 
+    expected = drawn + after - before
     deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and abs(rule_width(read_text(code_pane, "visible")) - after) > 1:
+    while time.monotonic() < deadline and abs(rule_width(read_text(code_pane, "visible")) - expected) > 1:
         time.sleep(0.2)
-    assert abs(rule_width(read_text(code_pane, "visible")) - after) <= 1  # drawn again at the new width
+    assert abs(rule_width(read_text(code_pane, "visible")) - expected) <= 1  # drawn again at the new width
 
     assert collie(root, tab, "close").returncode == 0
 

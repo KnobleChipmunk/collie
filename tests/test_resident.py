@@ -127,6 +127,8 @@ def test_any_key_exits_zero(spawn, source_file: Path) -> None:
     assert r.exit_code(timeout=0.5) is None  # resident first, so the key is what ends it
     os.write(r.fd, b"x")
     assert r.exit_code() == 0
+    lflag = termios.tcgetattr(r.fd)[3]
+    assert lflag & termios.ECHO and lflag & termios.ICANON  # the shell gets a normal terminal back
 
 
 @pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP, signal.SIGINT])
@@ -136,6 +138,8 @@ def test_signals_exit_zero(spawn, source_file: Path, sig: signal.Signals) -> Non
     assert r.exit_code(timeout=0.5) is None  # resident first, so the signal is what ends it
     os.kill(r.pid, sig)
     assert r.exit_code() == 0
+    lflag = termios.tcgetattr(r.fd)[3]
+    assert lflag & termios.ECHO and lflag & termios.ICANON
 
 
 def test_resident_off_draws_once(spawn, source_file: Path) -> None:
