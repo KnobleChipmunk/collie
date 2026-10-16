@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,7 +42,12 @@ class FakeHerdr:
     def cli(self, *args: str, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
         env = {**self.env, **(extra_env or {})}
         return subprocess.run(
-            [sys.executable, "-m", "collie", *args], env=env, capture_output=True, text=True, check=False
+            [sys.executable, "-m", "collie", *args],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,  # a render that wrongly stays resident fails here instead of hanging
         )
 
 
@@ -86,3 +92,25 @@ def git_repo(tmp_path: Path) -> Path:
     subprocess.run([*git, "commit", "-q", "-m", "one"], check=True)
     (repo / "a.py").write_text("x = 2\n")
     return repo
+
+
+RENDERER_LIKE = [sys.executable, "-c", "import time; time.sleep(30)", "-m", "collie", "render", "show", "/x"]
+NOT_A_RENDERER = ["sleep", "30"]
+
+
+@pytest.fixture
+def processes():
+    """Start real throwaway processes; every one is killed at teardown."""
+    started: list[subprocess.Popen] = []
+
+    def start(argv: list[str]) -> subprocess.Popen:
+        proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        started.append(proc)
+        time.sleep(0.2)  # let exec finish so `ps` shows the final command line
+        return proc
+
+    yield start
+    for proc in started:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()

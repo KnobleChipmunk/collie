@@ -219,3 +219,88 @@ def test_ensure_hook_on_empty_settings() -> None:
     settings, changed = ensure_hook({})
     assert changed
     assert settings["hooks"]["SessionStart"][0]["hooks"] == [{"type": "command", "command": "collie rule"}]
+
+
+# resident renderer (rerender-on-resize) -------------------------------------------------------
+
+
+def test_resident_constants() -> None:
+    from collie.panes import RENDER_MARK
+    from collie.resident import REDRAW_CLEAR, SETTLE_S
+
+    assert REDRAW_CLEAR == "\x1b[H\x1b[2J"
+    assert SETTLE_S == 0.15
+    assert RENDER_MARK == "-m collie render"
+
+
+class _Tty:
+    def __init__(self, tty: bool) -> None:
+        self.tty = tty
+
+    def isatty(self) -> bool:
+        return self.tty
+
+
+@pytest.mark.parametrize(
+    ("stdin", "stdout", "env", "expected"),
+    [(True, True, None, True), (False, True, None, False), (True, False, None, False), (True, True, "off", False)],
+)
+def test_resident_enabled(
+    monkeypatch: pytest.MonkeyPatch, stdin: bool, stdout: bool, env: str | None, expected: bool
+) -> None:
+    import sys
+
+    from collie.resident import resident_enabled
+
+    monkeypatch.setattr(sys, "stdin", _Tty(stdin))
+    monkeypatch.setattr(sys, "stdout", _Tty(stdout))
+    if env is None:
+        monkeypatch.delenv("COLLIE_RESIDENT", raising=False)
+    else:
+        monkeypatch.setenv("COLLIE_RESIDENT", env)
+    assert resident_enabled() is expected
+
+
+def test_renderer_pids() -> None:
+    from collie.panes import renderer_pids
+
+    info = {
+        "foreground_processes": [
+            {"name": "Python", "cmdline": "/py -m collie render show /f", "pid": 11},
+            {"name": "bat", "cmdline": "bat --paging=never /f", "pid": 12},
+            {"name": "Python", "cmdline": "/py -m collie render diff --repo /r", "pid": "13"},
+            {"name": "Python", "cmdline": "/py -m collie render show /g"},
+        ]
+    }
+    assert renderer_pids(info) == [11]
+    assert renderer_pids({"foreground_processes": []}) == []
+
+
+def test_is_collie_renderer_reads_the_live_command(processes) -> None:
+    from collie.panes import is_collie_renderer
+    from conftest import NOT_A_RENDERER, RENDERER_LIKE
+
+    renderer = processes(RENDERER_LIKE)
+    other = processes(NOT_A_RENDERER)
+    assert is_collie_renderer(renderer.pid) is True
+    assert is_collie_renderer(other.pid) is False
+    other.kill()
+    other.wait()
+    assert is_collie_renderer(other.pid) is False  # gone: never signalled
+
+
+def test_stop_renderers_signals_only_confirmed(processes) -> None:
+    from collie.panes import stop_renderers
+    from conftest import NOT_A_RENDERER, RENDERER_LIKE
+
+    renderer = processes(RENDERER_LIKE)
+    impostor = processes(NOT_A_RENDERER)  # herdr claims it is a renderer; ps says otherwise
+    info = {
+        "foreground_processes": [
+            {"name": "Python", "cmdline": "/py -m collie render show /x", "pid": renderer.pid},
+            {"name": "Python", "cmdline": "/py -m collie render show /y", "pid": impostor.pid},
+        ]
+    }
+    assert stop_renderers(info) == 1
+    assert renderer.wait(timeout=5) == -15  # SIGTERM
+    assert impostor.poll() is None

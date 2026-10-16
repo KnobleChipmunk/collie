@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Stand-in for delta: prints its argv and the number of diff lines it received on stdin."""
+"""Stand-in for delta: prints its argv, the diff line count from stdin, and its width when on a terminal."""
 
 import json
+import shutil
 import sys
 
 lines = sys.stdin.read().splitlines()
 print("DELTA " + json.dumps(sys.argv[1:]))
 print(f"DELTA_STDIN_LINES {len(lines)}")
+if sys.stdout.isatty():
+    print(f"DELTA_COLS {shutil.get_terminal_size().columns}")

@@ -2,12 +2,14 @@
 
 import json
 import os
+import signal
 import subprocess
 
 LABEL_PREFIX = "collie:"
 RIGHT_MIN_WIDTH = 160
 SHELLS = {"zsh", "bash", "fish", "sh", "nu", "dash"}
 RENDER_PROCS = {"bat", "delta", "git"}
+RENDER_MARK = "-m collie render"
 POLL_INTERVAL_S = 0.2
 HERDR_TIMEOUT_S = 30
 
@@ -56,9 +58,38 @@ def is_idle_shell(process_info: dict) -> bool:
 
 def is_own_render(process_info: dict) -> bool:
     procs = process_info.get("foreground_processes", [])
-    return bool(procs) and all(
-        p.get("name") in RENDER_PROCS or "-m collie render" in (p.get("cmdline") or "") for p in procs
-    )
+    return bool(procs) and all(p.get("name") in RENDER_PROCS or RENDER_MARK in (p.get("cmdline") or "") for p in procs)
+
+
+def renderer_pids(process_info: dict) -> list[int]:
+    return [
+        p["pid"]
+        for p in process_info.get("foreground_processes", [])
+        if RENDER_MARK in (p.get("cmdline") or "") and isinstance(p.get("pid"), int)
+    ]
+
+
+def is_collie_renderer(pid: int) -> bool:
+    try:
+        done = subprocess.run(
+            ["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, check=False, timeout=5
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return done.returncode == 0 and RENDER_MARK in done.stdout
+
+
+def stop_renderers(process_info: dict) -> int:
+    stopped = 0
+    for pid in renderer_pids(process_info):
+        if not is_collie_renderer(pid):
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            continue
+        stopped += 1
+    return stopped
 
 
 class Herdr:

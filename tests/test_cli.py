@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from conftest import CALLER, TAB, FakeHerdr
 
 LABEL = f"collie:{CALLER}"
@@ -85,6 +87,104 @@ def test_busy_code_pane_exits_4_without_input(herdr: FakeHerdr, source_file: Pat
     assert "w1:p5" in r.stderr
     assert not {"run", "send-keys", "send-text", "split"} & set(herdr.verbs())
     assert herdr.calls_on("process-info", "w1:p5") == 1  # the user's program: no polling
+
+
+def renderer_entry(pid: int) -> dict:
+    return {"name": "Python", "cmdline": f"{sys.executable} -m collie render show /x", "pid": pid}
+
+
+def test_resident_renderer_is_stopped_then_pane_reused(herdr: FakeHerdr, source_file: Path, processes) -> None:
+    from conftest import RENDERER_LIKE
+
+    renderer = processes(RENDERER_LIKE)
+    herdr.set_panes(
+        {
+            CALLER: {"tab_id": TAB, "cwd": "/tmp", "width": 128},
+            "w1:p5": {
+                "tab_id": TAB,
+                "cwd": "/tmp",
+                "width": 80,
+                "label": LABEL,
+                "procs_seq": [[renderer_entry(renderer.pid)], ["zsh"]],
+            },
+        }
+    )
+    r = herdr.cli("show", str(source_file))
+    assert r.returncode == 0, r.stderr
+    assert renderer.wait(timeout=5) == -15
+    assert herdr.run_commands()[0][0] == "w1:p5"
+    assert "split" not in herdr.verbs()
+    assert not {"send-keys", "send-text"} & set(herdr.verbs())
+
+
+def test_stale_renderer_pid_is_not_signalled(herdr: FakeHerdr, source_file: Path, processes) -> None:
+    from conftest import NOT_A_RENDERER
+
+    impostor = processes(NOT_A_RENDERER)
+    herdr.set_panes(
+        {
+            CALLER: {"tab_id": TAB, "cwd": "/tmp", "width": 128},
+            "w1:p5": {
+                "tab_id": TAB,
+                "cwd": "/tmp",
+                "width": 80,
+                "label": LABEL,
+                "procs_seq": [[renderer_entry(impostor.pid)]],
+            },
+        }
+    )
+    r = herdr.cli("show", str(source_file))
+    assert r.returncode == 4
+    assert impostor.poll() is None
+    assert "run" not in herdr.verbs()
+
+
+@pytest.mark.parametrize("command", ["show", "close"])
+def test_empty_foreground_after_stop_is_waited_out(
+    herdr: FakeHerdr, source_file: Path, processes, command: str
+) -> None:
+    """Real herdr 0.8.0 briefly reports no foreground process between the renderer's exit and the shell's prompt."""
+    from conftest import RENDERER_LIKE
+
+    renderer = processes(RENDERER_LIKE)
+    herdr.set_panes(
+        {
+            CALLER: {"tab_id": TAB, "cwd": "/tmp", "width": 128},
+            "w1:p5": {
+                "tab_id": TAB,
+                "cwd": "/tmp",
+                "width": 80,
+                "label": LABEL,
+                "procs_seq": [[renderer_entry(renderer.pid)], [], [], ["zsh"]],
+            },
+        }
+    )
+    args = ["show", str(source_file)] if command == "show" else ["close"]
+    r = herdr.cli(*args)
+    assert r.returncode == 0, r.stderr
+    assert renderer.wait(timeout=5) == -15
+
+
+def test_close_stops_resident_renderer(herdr: FakeHerdr, processes) -> None:
+    from conftest import RENDERER_LIKE
+
+    renderer = processes(RENDERER_LIKE)
+    herdr.set_panes(
+        {
+            CALLER: {"tab_id": TAB, "cwd": "/tmp", "width": 128},
+            "w1:p5": {
+                "tab_id": TAB,
+                "cwd": "/tmp",
+                "width": 80,
+                "label": LABEL,
+                "procs_seq": [[renderer_entry(renderer.pid)], ["zsh"]],
+            },
+        }
+    )
+    r = herdr.cli("close")
+    assert r.returncode == 0, r.stderr
+    assert renderer.wait(timeout=5) == -15
+    assert "w1:p5" not in herdr.panes()
 
 
 def test_herdr_error_exits_5(herdr: FakeHerdr, source_file: Path) -> None:
