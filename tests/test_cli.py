@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from conftest import CALLER, TAB, FakeHerdr
 
 LABEL = f"collie:{CALLER}"
@@ -135,6 +137,32 @@ def test_stale_renderer_pid_is_not_signalled(herdr: FakeHerdr, source_file: Path
     assert r.returncode == 4
     assert impostor.poll() is None
     assert "run" not in herdr.verbs()
+
+
+@pytest.mark.parametrize("command", ["show", "close"])
+def test_empty_foreground_after_stop_is_waited_out(
+    herdr: FakeHerdr, source_file: Path, processes, command: str
+) -> None:
+    """Real herdr 0.8.0 briefly reports no foreground process between the renderer's exit and the shell's prompt."""
+    from conftest import RENDERER_LIKE
+
+    renderer = processes(RENDERER_LIKE)
+    herdr.set_panes(
+        {
+            CALLER: {"tab_id": TAB, "cwd": "/tmp", "width": 128},
+            "w1:p5": {
+                "tab_id": TAB,
+                "cwd": "/tmp",
+                "width": 80,
+                "label": LABEL,
+                "procs_seq": [[renderer_entry(renderer.pid)], [], [], ["zsh"]],
+            },
+        }
+    )
+    args = ["show", str(source_file)] if command == "show" else ["close"]
+    r = herdr.cli(*args)
+    assert r.returncode == 0, r.stderr
+    assert renderer.wait(timeout=5) == -15
 
 
 def test_close_stops_resident_renderer(herdr: FakeHerdr, processes) -> None:

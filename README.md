@@ -25,6 +25,8 @@ collie diff HEAD~1 --path src/a.py
 collie close
 ```
 
+The code pane redraws when resized; press any key in it to get your shell back; `COLLIE_RESIDENT=off` draws once.
+
 Set `COLLIE=off` to disable it (builder and reviewer panes). To change the theme, set
 `COLLIE_THEME` in your shell profile: the code pane runs its own shell, so a value set only in the
 agent's environment does not reach it.

@@ -20,6 +20,7 @@ Show the exact lines you are talking about, then explain only what the pane does
 
 - The first call splits your pane without moving focus and labels the new pane `collie:<your pane id>`.
   Later calls reuse it. Earlier excerpts stay in the pane's scrollback.
+- The code pane stays live and redraws on resize; collie stops it itself before the next render.
 - Exit 4: the user is using the code pane (or it never reached a prompt). Say so and continue in prose.
 - Exit 3: not inside Herdr. Exit 2: bad arguments (nothing was shown). Exit 5: Herdr returned an error.
 - If stdout reports lines scrolled out of view, show a smaller range; do not claim the user saw them.

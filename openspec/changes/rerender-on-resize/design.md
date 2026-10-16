@@ -63,3 +63,8 @@
    captured `render` can never hang. `COLLIE_RESIDENT=off` is the manual escape hatch.
 5. **Clear, not scroll, on a resize redraw.** Scrolling would add a full copy of the excerpt to
    scrollback on every resize; earlier excerpts from earlier calls stay in scrollback either way.
+6. **Lead ruling (final pass): an empty foreground list after a stop means "changing over".** Real
+   herdr 0.8.0 briefly reports no foreground process between the renderer's exit and the shell's
+   prompt; the real herdr check failed 3 of 3 runs on it. After collie stops its own renderer it keeps
+   waiting through an empty list, up to the grace period. The first check is unchanged, so the user's
+   own program still exits 4 at once.

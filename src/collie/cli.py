@@ -13,7 +13,16 @@ from importlib import resources
 from pathlib import Path
 
 from collie import panes, setup
-from collie.panes import Herdr, HerdrError, choose_direction, find_code_pane, is_idle_shell, is_own_render, label_for
+from collie.panes import (
+    Herdr,
+    HerdrError,
+    choose_direction,
+    find_code_pane,
+    is_idle_shell,
+    is_own_render,
+    label_for,
+    stop_renderers,
+)
 from collie.ranges import Excerpt, find_match, parse_excerpt
 from collie.render import (
     bat_argv,
@@ -25,6 +34,7 @@ from collie.render import (
     redraw_prefix,
     theme,
 )
+from collie.resident import resident_enabled, resident_terminal, stay_resident
 
 MAX_EXCERPTS = 5
 DEFAULT_CONTEXT = 30
@@ -194,6 +204,22 @@ def await_idle(herdr: Herdr, pane: str, keep_waiting: Callable[[dict], bool]) ->
         time.sleep(panes.POLL_INTERVAL_S)
 
 
+def stop_and_wait(herdr: Herdr, pane: str) -> dict | None:
+    """None once the pane is an idle shell; else the process info that kept it busy.
+
+    Collie's own render (resident or not) is waited out, with SIGTERM sent to a confirmed resident
+    renderer; anything else in the foreground is the user's and gets no signal.
+    """
+    info = herdr.process_info(pane)
+    if is_idle_shell(info):
+        return None
+    if not is_own_render(info):
+        return info
+    stop_renderers(info)
+    # herdr briefly reports no foreground process between the renderer exiting and the prompt
+    return await_idle(herdr, pane, lambda i: is_own_render(i) or not i.get("foreground_processes"))
+
+
 def pane_rect(herdr: Herdr, pane: str) -> dict:
     for entry in herdr.layout(pane):
         if entry.get("pane_id") == pane:
@@ -241,7 +267,7 @@ def deliver(plan: Plan) -> int:
 
     if existing is not None:
         code_pane = existing
-        busy = await_idle(herdr, code_pane, is_own_render)
+        busy = stop_and_wait(herdr, code_pane)
         if busy is not None:
             raise busy_exit(code_pane, busy)
     else:
@@ -286,9 +312,9 @@ def cmd_close(_args: argparse.Namespace) -> int:
     if code_pane is None:
         print("no code pane to close")
         return 0
-    info = herdr.process_info(code_pane)
-    if not is_idle_shell(info):
-        raise busy_exit(code_pane, info)
+    busy = stop_and_wait(herdr, code_pane)
+    if busy is not None:
+        raise busy_exit(code_pane, busy)
     herdr.close(code_pane)
     print(f"closed {code_pane}")
     return 0
@@ -310,38 +336,61 @@ def cmd_setup(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_render(draw: Callable[[], int]) -> int:
+    """First draw, then on a terminal stay resident and redraw on resize (design.md)."""
+    out = sys.stdout
+    if not resident_enabled():
+        out.write(redraw_prefix(shutil.get_terminal_size().lines))
+        return draw()
+    with resident_terminal() as state:
+        out.write(redraw_prefix(shutil.get_terminal_size().lines))
+        status = draw()
+        if state.stop:
+            return status
+        return stay_resident(state, draw)
+
+
 def cmd_render_show(args: argparse.Namespace) -> int:
     out = sys.stdout
-    out.write(redraw_prefix(shutil.get_terminal_size().lines))
     note = clean_note(args.note)
-    status = 0
-    for index, text in enumerate(args.excerpts):
+    excerpts: list[Excerpt] = []
+    for text in args.excerpts:
         try:
-            ex = parse_excerpt(text)
+            excerpts.append(parse_excerpt(text))
         except ValueError as exc:
             raise CollieExit(2, f"collie: {exc}") from exc
-        out.write(note_line(header_text(ex.subject(), note if index == 0 else None)) + "\n\n")
-        out.flush()
-        argv = bat_argv(ex.path, ex.lines, list(ex.highlights), theme())
-        status = subprocess.run(argv, check=False).returncode or status
-    return status
+
+    def draw() -> int:
+        status = 0
+        for index, ex in enumerate(excerpts):
+            out.write(note_line(header_text(ex.subject(), note if index == 0 else None)) + "\n\n")
+            out.flush()
+            argv = bat_argv(ex.path, ex.lines, list(ex.highlights), theme())
+            status = subprocess.run(argv, check=False).returncode or status
+        return status
+
+    return run_render(draw)
 
 
 def cmd_render_diff(args: argparse.Namespace) -> int:
     out = sys.stdout
     paths: list[str] = args.path or []
     git_argv, delta_argv = diff_argvs(Path(args.repo), args.rev, paths, theme())
-    out.write(redraw_prefix(shutil.get_terminal_size().lines))
-    out.write(note_line(header_text(diff_subject(args.rev, paths), clean_note(args.note))) + "\n\n")
-    out.flush()
-    done = subprocess.run(git_argv, capture_output=True, check=False)
-    if done.returncode != 0:
-        sys.stderr.write(done.stderr.decode("utf-8", errors="replace"))
-        return done.returncode
-    if not done.stdout.strip():
-        print("no changes")
-        return 0
-    return subprocess.run(delta_argv, input=done.stdout, check=False).returncode
+    header = note_line(header_text(diff_subject(args.rev, paths), clean_note(args.note))) + "\n\n"
+
+    def draw() -> int:
+        out.write(header)
+        out.flush()
+        done = subprocess.run(git_argv, capture_output=True, check=False)
+        if done.returncode != 0:
+            sys.stderr.write(done.stderr.decode("utf-8", errors="replace"))
+            return done.returncode
+        if not done.stdout.strip():
+            print("no changes")
+            return 0
+        return subprocess.run(delta_argv, input=done.stdout, check=False).returncode
+
+    return run_render(draw)
 
 
 # parser ---------------------------------------------------------------------------------------
