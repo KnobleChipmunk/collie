@@ -73,7 +73,47 @@ def scratch_tab(tmp_path: Path) -> Iterator[tuple[str, str]]:
 def collie(root: str, tab: str, *args: str) -> subprocess.CompletedProcess:
     env = {**os.environ, "HERDR_PANE_ID": root, "HERDR_TAB_ID": tab}
     env.pop("COLLIE", None)
+    env.pop("COLLIE_RESIDENT", None)
     return subprocess.run([sys.executable, "-m", "collie", *args], env=env, capture_output=True, text=True, check=False)
+
+
+def rule_width(text: str) -> int:
+    """Width of bat's widest grid rule (a line of box drawing only), which bat draws at full width."""
+    rules = [line.rstrip() for line in text.splitlines() if line.strip() and set(line.strip()) <= set("─┬┼┴")]
+    return max((len(line) for line in rules), default=0)
+
+
+def pane_width(pane: str) -> int:
+    rows = herdr("pane", "layout", "--pane", pane)["result"]["layout"]["panes"]
+    return next(row["rect"]["width"] for row in rows if row["pane_id"] == pane)
+
+
+def test_resident_renderer_redraws_on_resize(scratch_tab: tuple[str, str], source_file: Path) -> None:
+    tab, root = scratch_tab
+    shown = collie(root, tab, "show", f"{source_file}:1-10")
+    assert shown.returncode == 0, shown.stderr
+    found = re.search(r"shown in (\S+):", shown.stdout)
+    assert found, shown.stdout
+    code_pane = found.group(1)
+    herdr("pane", "wait-output", code_pane, "--match", "line_10 = 10", "--timeout", "10000")
+
+    procs = herdr("pane", "process-info", "--pane", code_pane)["result"]["process_info"]["foreground_processes"]
+    assert any("-m collie render" in (p.get("cmdline") or "") for p in procs)  # still resident
+
+    before = pane_width(code_pane)
+    for direction in ("left", "right"):
+        herdr("pane", "resize", "--pane", code_pane, "--direction", direction, "--amount", "0.1")
+        if pane_width(code_pane) != before:
+            break
+    after = pane_width(code_pane)
+    assert after != before, "herdr pane resize did not change the code pane's width"
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and abs(rule_width(read_text(code_pane, "visible")) - after) > 1:
+        time.sleep(0.2)
+    assert abs(rule_width(read_text(code_pane, "visible")) - after) <= 1  # drawn again at the new width
+
+    assert collie(root, tab, "close").returncode == 0
 
 
 def test_show_reuse_scrollback_close(scratch_tab: tuple[str, str], source_file: Path) -> None:
@@ -103,8 +143,7 @@ def test_show_reuse_scrollback_close(scratch_tab: tuple[str, str], source_file: 
     assert "example.py:20-25" in read_text(code_pane, "visible")
     assert "line_3 = 3" in read_text(code_pane, "recent")  # the first excerpt survives in scrollback
 
-    wait_for_shell(code_pane)  # the render has exited; close does no grace wait
-    closed = collie(root, tab, "close")
+    closed = collie(root, tab, "close")  # the renderer is still resident; close stops it
     assert closed.returncode == 0, closed.stderr
     remaining = [
         p["pane_id"]

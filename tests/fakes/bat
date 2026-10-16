@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Stand-in for bat: prints its argv as one JSON line tagged BAT."""
+"""Stand-in for bat: prints its argv as one JSON line tagged BAT, and its width when on a terminal."""
 
 import json
+import shutil
 import sys
 
 print("BAT " + json.dumps(sys.argv[1:]))
+if sys.stdout.isatty():
+    print(f"BAT_COLS {shutil.get_terminal_size().columns}")
