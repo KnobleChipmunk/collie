@@ -16,6 +16,24 @@ collie setup
 
 `collie setup` is idempotent and writes `settings.json.bak.<timestamp>` before changing `~/.claude/settings.json`.
 
+### As a Herdr plugin
+
+```bash
+herdr plugin install KnobleChipmunk/collie   # build step runs `uv tool install --force .`
+collie setup                                 # still required: the plugin cannot wire up your agents
+```
+
+Requires uv, Python 3.11+, bat, and delta; Herdr does not install them. The plugin adds one
+action, `collie.close` (close the code pane beside the focused pane). Bind it in `config.toml`:
+
+```toml
+[[keys.command]]
+key = "prefix+alt+c"
+type = "plugin_action"
+command = "collie.close"
+description = "close collie pane"
+```
+
 ## Use
 
 ```bash
