@@ -97,3 +97,7 @@ uv run pytest
 
 The spec lives in `openspec/changes/add-collie/`. The screenshots are real pane output: see
 [`docs/images/README.md`](docs/images/README.md) to regenerate them.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
