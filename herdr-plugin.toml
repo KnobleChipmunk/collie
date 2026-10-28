@@ -1,0 +1,15 @@
+id = "collie"
+name = "collie"
+version = "0.1.0"
+min_herdr_version = "0.8.0"
+description = "Agents show code in a Herdr pane, colored with bat and delta, instead of describing it"
+platforms = ["macos", "linux"]
+
+[[build]]
+command = ["uv", "tool", "install", "--force", "."]
+
+[[actions]]
+id = "close"
+title = "Close the collie code pane"
+contexts = ["pane"]
+command = ["sh", "plugin/run-collie.sh", "close"]
